@@ -1,0 +1,1469 @@
+---
+title: "India Census 2011 - Comprehensive State & District Level Analysis"
+author: "Census Data Explorer"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    theme: flatly
+    highlight: tango
+    code_folding: show
+    number_sections: true
+    fig_width: 12
+    fig_height: 7
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 12,
+  fig.height = 7,
+  dpi = 150
+)
+```
+
+# Introduction
+
+This notebook performs a **comprehensive exploratory data analysis (EDA)** of the **Census of India 2011** data at the **State and District** level. The dataset contains demographic indicators including population, gender breakdowns, age groups, caste classifications (SC/ST), literacy, and workforce participation across all states and districts of India.
+
+We will cover:
+
+- Data loading, cleaning, and structural exploration
+- Summary statistics and data quality checks
+- Population distribution analysis (Total, Urban, Rural)
+- Gender-based analysis (Sex Ratio, Child Sex Ratio)
+- Literacy analysis (Overall, Male, Female, Gender Gap)
+- Scheduled Caste (SC) & Scheduled Tribe (ST) demographics
+- Workforce participation and employment structure
+- Comparative state-level and district-level visualizations
+- Correlation analysis and advanced insights
+
+---
+
+# Setup: Install & Load Required Libraries
+
+```{r install-packages}
+# Install packages if not already installed
+required_packages <- c(
+  "readxl", "dplyr", "tidyr", "ggplot2", "scales", "forcats",
+  "knitr", "kableExtra", "corrplot", "RColorBrewer", "gridExtra",
+  "stringr", "treemapify", "viridis"
+)
+
+new_packages <- required_packages[!(required_packages %in% installed.packages()[, "Package"])]
+if (length(new_packages)) install.packages(new_packages, repos = "https://cran.r-project.org")
+```
+
+```{r load-libraries}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(scales)
+library(forcats)
+library(knitr)
+library(kableExtra)
+library(corrplot)
+library(RColorBrewer)
+library(gridExtra)
+library(stringr)
+library(treemapify)
+library(viridis)
+library(tibble)
+```
+
+```{r set-theme}
+# Set a consistent ggplot theme for all visualizations
+theme_census <- theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5, color = "grey40"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+theme_set(theme_census)
+```
+
+---
+
+# Data Loading & Initial Exploration
+
+## Read the Excel File
+
+```{r load-data}
+# Read the first sheet of the Excel file
+file_path <- "2011-IndiaStateDist.xlsx"
+raw_data <- read_excel(file_path, sheet = 1)
+```
+
+```{r dimensions}
+cat("Dataset Dimensions:\n")
+cat("  Rows:", nrow(raw_data), "\n")
+cat("  Columns:", ncol(raw_data), "\n")
+```
+
+## View Column Names
+
+```{r column-names}
+# Print all column names for reference
+cat("All Column Names:\n")
+colnames(raw_data)
+```
+
+## Preview First Few Rows
+
+```{r head-preview}
+head(raw_data, 10) %>%
+  kable(caption = "First 10 Rows of Raw Data") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "400px")
+```
+
+## Preview Last Few Rows
+
+```{r tail-preview}
+tail(raw_data, 10) %>%
+  kable(caption = "Last 10 Rows of Raw Data") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 10) %>%
+  scroll_box(width = "100%", height = "400px")
+```
+
+## Data Structure & Types
+
+```{r structure}
+str(raw_data)
+```
+
+```{r glimpse}
+glimpse(raw_data)
+```
+
+## Unique Values in Key Columns
+
+```{r unique-level}
+cat("Unique values in 'Level' column:\n")
+table(raw_data$Level)
+```
+
+```{r unique-tru}
+cat("\nUnique values in 'TRU' column (Total/Rural/Urban):\n")
+table(raw_data$TRU)
+```
+
+---
+
+# Data Cleaning & Preparation
+
+## Filter State-Level and District-Level Data
+
+We separate the data into **state-level** and **district-level** subsets. We focus on rows where `TRU == "Total"` for aggregate numbers, and also keep Rural/Urban breakdowns for further analysis.
+
+```{r filter-state-data}
+# State-level data (Level == "STATE")
+state_total <- raw_data %>%
+  filter(Level == "STATE", TRU == "Total") %>%
+  arrange(Name)
+
+cat("Number of States/UTs (Total):", nrow(state_total), "\n")
+cat("State Names:\n")
+sort(unique(state_total$Name))
+```
+
+```{r filter-district-data}
+# District-level data (Level == "DISTRICT")
+district_total <- raw_data %>%
+  filter(Level == "DISTRICT", TRU == "Total") %>%
+  arrange(Name)
+
+cat("Number of Districts (Total):", nrow(district_total), "\n")
+```
+
+```{r rural-urban-state}
+# State-level Rural and Urban breakdowns
+state_rural <- raw_data %>% filter(Level == "STATE", TRU == "Rural")
+state_urban <- raw_data %>% filter(Level == "STATE", TRU == "Urban")
+
+cat("State-level Rural rows:", nrow(state_rural), "\n")
+cat("State-level Urban rows:", nrow(state_urban), "\n")
+```
+
+```{r rural-urban-district}
+# District-level Rural and Urban breakdowns
+district_rural <- raw_data %>% filter(Level == "DISTRICT", TRU == "Rural")
+district_urban <- raw_data %>% filter(Level == "DISTRICT", TRU == "Urban")
+
+cat("District-level Rural rows:", nrow(district_rural), "\n")
+cat("District-level Urban rows:", nrow(district_urban), "\n")
+```
+
+## Check for Missing Values
+
+```{r missing-values}
+# Check missing values in state-level data
+missing_counts <- colSums(is.na(state_total))
+missing_df <- data.frame(
+  Column = names(missing_counts),
+  Missing = as.integer(missing_counts)
+) %>%
+  filter(Missing > 0)
+
+if (nrow(missing_df) > 0) {
+  cat("Columns with missing values in state-level data:\n")
+  print(missing_df)
+} else {
+  cat("No missing values in state-level data!\n")
+}
+```
+
+```{r missing-values-district}
+# Check missing values in district-level data
+missing_dist <- colSums(is.na(district_total))
+missing_dist_df <- data.frame(
+  Column = names(missing_dist),
+  Missing = as.integer(missing_dist)
+) %>%
+  filter(Missing > 0)
+
+if (nrow(missing_dist_df) > 0) {
+  cat("Columns with missing values in district-level data:\n")
+  print(missing_dist_df)
+} else {
+  cat("No missing values in district-level data!\n")
+}
+```
+
+## Compute Derived Metrics
+
+```{r derived-metrics-state}
+# Add derived columns to state-level data
+state_total <- state_total %>%
+  mutate(
+    Sex_Ratio = round((TOT_F / TOT_M) * 1000, 1),
+    Child_Sex_Ratio = round((F_06 / M_06) * 1000, 1),
+    Literacy_Rate = round((P_LIT / (TOT_P - P_06)) * 100, 2),
+    Male_Literacy_Rate = round((M_LIT / (TOT_M - M_06)) * 100, 2),
+    Female_Literacy_Rate = round((F_LIT / (TOT_F - F_06)) * 100, 2),
+    Literacy_Gender_Gap = round(Male_Literacy_Rate - Female_Literacy_Rate, 2),
+    Pct_SC = round((P_SC / TOT_P) * 100, 2),
+    Pct_ST = round((P_ST / TOT_P) * 100, 2),
+    Pct_Child_06 = round((P_06 / TOT_P) * 100, 2),
+    Work_Participation_Rate = round((TOT_WORK_P / TOT_P) * 100, 2),
+    Male_WPR = round((TOT_WORK_M / TOT_M) * 100, 2),
+    Female_WPR = round((TOT_WORK_F / TOT_F) * 100, 2),
+    Pct_Main_Workers = round((MAINWORK_P / TOT_WORK_P) * 100, 2),
+    Pct_Marginal_Workers = round((MARGWORK_P / TOT_WORK_P) * 100, 2),
+    Pct_Non_Workers = round((NON_WORK_P / TOT_P) * 100, 2),
+    Pct_Cultivators = round(((MAIN_CL_P + MARG_CL_P) / TOT_WORK_P) * 100, 2),
+    Pct_Agri_Lab = round(((MAIN_AL_P + MARG_AL_P) / TOT_WORK_P) * 100, 2),
+    Pct_HH_Industry = round(((MAIN_HH_P + MARG_HH_P) / TOT_WORK_P) * 100, 2),
+    Pct_Other_Workers = round(((MAIN_OT_P + MARG_OT_P) / TOT_WORK_P) * 100, 2),
+    Avg_HH_Size = round(TOT_P / No_HH, 2),
+    Urban_Pct = NA_real_  # placeholder, computed below
+  )
+
+cat("Derived metrics added to state data. New column count:", ncol(state_total), "\n")
+```
+
+```{r compute-urban-pct}
+# Compute urbanization percentage from state urban data
+if (nrow(state_urban) > 0) {
+  urban_pop <- state_urban %>% select(Name, Urban_Pop = TOT_P)
+  state_total <- state_total %>%
+    left_join(urban_pop, by = "Name") %>%
+    mutate(Urban_Pct = round((Urban_Pop / TOT_P) * 100, 2)) %>%
+    select(-Urban_Pop)
+}
+```
+
+```{r derived-metrics-district}
+# Add derived columns to district-level data
+district_total <- district_total %>%
+  mutate(
+    Sex_Ratio = round((TOT_F / TOT_M) * 1000, 1),
+    Child_Sex_Ratio = round((F_06 / M_06) * 1000, 1),
+    Literacy_Rate = round((P_LIT / (TOT_P - P_06)) * 100, 2),
+    Male_Literacy_Rate = round((M_LIT / (TOT_M - M_06)) * 100, 2),
+    Female_Literacy_Rate = round((F_LIT / (TOT_F - F_06)) * 100, 2),
+    Literacy_Gender_Gap = round(Male_Literacy_Rate - Female_Literacy_Rate, 2),
+    Pct_SC = round((P_SC / TOT_P) * 100, 2),
+    Pct_ST = round((P_ST / TOT_P) * 100, 2),
+    Pct_Child_06 = round((P_06 / TOT_P) * 100, 2),
+    Work_Participation_Rate = round((TOT_WORK_P / TOT_P) * 100, 2),
+    Male_WPR = round((TOT_WORK_M / TOT_M) * 100, 2),
+    Female_WPR = round((TOT_WORK_F / TOT_F) * 100, 2),
+    Pct_Main_Workers = round((MAINWORK_P / TOT_WORK_P) * 100, 2),
+    Pct_Marginal_Workers = round((MARGWORK_P / TOT_WORK_P) * 100, 2),
+    Pct_Non_Workers = round((NON_WORK_P / TOT_P) * 100, 2),
+    Pct_Cultivators = round(((MAIN_CL_P + MARG_CL_P) / TOT_WORK_P) * 100, 2),
+    Pct_Agri_Lab = round(((MAIN_AL_P + MARG_AL_P) / TOT_WORK_P) * 100, 2),
+    Pct_HH_Industry = round(((MAIN_HH_P + MARG_HH_P) / TOT_WORK_P) * 100, 2),
+    Pct_Other_Workers = round(((MAIN_OT_P + MARG_OT_P) / TOT_WORK_P) * 100, 2),
+    Avg_HH_Size = round(TOT_P / No_HH, 2)
+  )
+
+cat("Derived metrics added to district data. New column count:", ncol(district_total), "\n")
+```
+
+---
+
+# Summary Statistics
+
+## India-Level Aggregate Summary
+
+```{r india-level-summary}
+# Get the India-level row if it exists, otherwise compute from states
+india_row <- raw_data %>% filter(Level == "STATE", TRU == "Total")
+
+india_summary <- data.frame(
+  Metric = c(
+    "Total Population", "Male Population", "Female Population",
+    "Population (0-6 yrs)", "SC Population", "ST Population",
+    "Total Literates", "Total Workers", "Main Workers",
+    "Marginal Workers", "Non-Workers", "Total Households"
+  ),
+  Value = format(c(
+    sum(india_row$TOT_P, na.rm = TRUE),
+    sum(india_row$TOT_M, na.rm = TRUE),
+    sum(india_row$TOT_F, na.rm = TRUE),
+    sum(india_row$P_06, na.rm = TRUE),
+    sum(india_row$P_SC, na.rm = TRUE),
+    sum(india_row$P_ST, na.rm = TRUE),
+    sum(india_row$P_LIT, na.rm = TRUE),
+    sum(india_row$TOT_WORK_P, na.rm = TRUE),
+    sum(india_row$MAINWORK_P, na.rm = TRUE),
+    sum(india_row$MARGWORK_P, na.rm = TRUE),
+    sum(india_row$NON_WORK_P, na.rm = TRUE),
+    sum(india_row$No_HH, na.rm = TRUE)
+  ), big.mark = ",")
+)
+
+india_summary %>%
+  kable(caption = "India-Level Census 2011 Summary (Aggregated from States)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+## State-Level Descriptive Statistics
+
+```{r state-descriptive-stats}
+# Descriptive statistics for key numeric columns
+key_cols <- c("TOT_P", "TOT_M", "TOT_F", "P_06", "P_SC", "P_ST",
+              "P_LIT", "P_ILL", "TOT_WORK_P", "NON_WORK_P", "No_HH")
+
+desc_stats <- state_total %>%
+  select(all_of(key_cols)) %>%
+  summarise(across(everything(), list(
+    Min = ~ min(., na.rm = TRUE),
+    Q1 = ~ quantile(., 0.25, na.rm = TRUE),
+    Median = ~ median(., na.rm = TRUE),
+    Mean = ~ round(mean(., na.rm = TRUE), 0),
+    Q3 = ~ quantile(., 0.75, na.rm = TRUE),
+    Max = ~ max(., na.rm = TRUE),
+    SD = ~ round(sd(., na.rm = TRUE), 0)
+  ))) %>%
+  pivot_longer(everything(), names_to = "Metric", values_to = "Value") %>%
+  separate(Metric, into = c("Variable", "Statistic"), sep = "_(?=[^_]+$)") %>%
+  pivot_wider(names_from = Statistic, values_from = Value)
+
+desc_stats %>%
+  kable(caption = "Descriptive Statistics of Key Variables (State Level)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 11) %>%
+  scroll_box(width = "100%")
+```
+
+## State-Level Derived Metrics Summary
+
+```{r derived-stats-summary}
+derived_cols <- c("Sex_Ratio", "Child_Sex_Ratio", "Literacy_Rate",
+                  "Male_Literacy_Rate", "Female_Literacy_Rate",
+                  "Literacy_Gender_Gap", "Work_Participation_Rate",
+                  "Male_WPR", "Female_WPR", "Pct_SC", "Pct_ST",
+                  "Pct_Child_06", "Urban_Pct", "Avg_HH_Size")
+
+state_total %>%
+  select(all_of(derived_cols)) %>%
+  summary() %>%
+  kable(caption = "Summary of Derived Metrics (State Level)") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+---
+
+# Population Analysis
+
+## Top 10 Most Populous States
+
+```{r top10-pop-states}
+top10_pop <- state_total %>%
+  arrange(desc(TOT_P)) %>%
+  head(10) %>%
+  mutate(Name = fct_reorder(Name, TOT_P))
+
+ggplot(top10_pop, aes(x = Name, y = TOT_P / 1e7, fill = TOT_P)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = paste0(round(TOT_P / 1e7, 1), " Cr")),
+            hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  scale_fill_viridis_c(option = "D") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Top 10 Most Populous States/UTs in India (Census 2011)",
+    subtitle = "Population in Crores (1 Crore = 10 Million)",
+    x = NULL, y = "Population (in Crores)"
+  )
+```
+
+## Bottom 10 Least Populous States/UTs
+
+```{r bottom10-pop-states}
+bottom10_pop <- state_total %>%
+  arrange(TOT_P) %>%
+  head(10) %>%
+  mutate(Name = fct_reorder(Name, TOT_P))
+
+ggplot(bottom10_pop, aes(x = Name, y = TOT_P / 1e5, fill = TOT_P)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = paste0(format(round(TOT_P / 1e5, 1), nsmall = 1), " L")),
+            hjust = -0.1, size = 3.5) +
+  coord_flip() +
+  scale_fill_viridis_c(option = "C", direction = -1) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  labs(
+    title = "Bottom 10 Least Populous States/UTs (Census 2011)",
+    subtitle = "Population in Lakhs (1 Lakh = 100,000)",
+    x = NULL, y = "Population (in Lakhs)"
+  )
+```
+
+## Population Distribution: Male vs Female by State
+
+```{r pop-gender-stacked}
+state_gender <- state_total %>%
+  select(Name, TOT_M, TOT_F) %>%
+  pivot_longer(cols = c(TOT_M, TOT_F), names_to = "Gender", values_to = "Population") %>%
+  mutate(
+    Gender = ifelse(Gender == "TOT_M", "Male", "Female"),
+    Name = fct_reorder(Name, Population, .fun = sum)
+  )
+
+ggplot(state_gender, aes(x = Name, y = Population / 1e7, fill = Gender)) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  scale_fill_manual(values = c("Male" = "#2196F3", "Female" = "#E91E63")) +
+  labs(
+    title = "Male vs Female Population by State/UT (Census 2011)",
+    subtitle = "Stacked bar chart showing gender composition",
+    x = NULL, y = "Population (in Crores)", fill = "Gender"
+  )
+```
+
+## Population Distribution Histogram (District Level)
+
+```{r pop-histogram-district}
+ggplot(district_total, aes(x = TOT_P / 1e6)) +
+  geom_histogram(bins = 50, fill = "#3F51B5", color = "white", alpha = 0.85) +
+  geom_vline(aes(xintercept = median(TOT_P / 1e6, na.rm = TRUE)),
+             color = "red", linetype = "dashed", size = 1) +
+  annotate("text", x = median(district_total$TOT_P / 1e6, na.rm = TRUE) + 0.5,
+           y = Inf, label = paste("Median:", round(median(district_total$TOT_P / 1e6, na.rm = TRUE), 2), "M"),
+           vjust = 2, color = "red", fontface = "bold") +
+  labs(
+    title = "Distribution of District Population (Census 2011)",
+    subtitle = "Histogram with median marker (red dashed line)",
+    x = "Population (in Millions)", y = "Number of Districts"
+  )
+```
+
+## Top 20 Most Populous Districts
+
+```{r top20-pop-districts}
+top20_dist <- district_total %>%
+  arrange(desc(TOT_P)) %>%
+  head(20) %>%
+  mutate(Name = fct_reorder(Name, TOT_P))
+
+ggplot(top20_dist, aes(x = Name, y = TOT_P / 1e6, fill = TOT_P)) +
+  geom_col(show.legend = FALSE) +
+  geom_text(aes(label = paste0(round(TOT_P / 1e6, 1), "M")),
+            hjust = -0.1, size = 3) +
+  coord_flip() +
+  scale_fill_viridis_c(option = "B") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = "Top 20 Most Populous Districts in India (Census 2011)",
+    x = NULL, y = "Population (Millions)"
+  )
+```
+
+## Treemap of State Population
+
+```{r treemap-pop}
+ggplot(state_total, aes(area = TOT_P, fill = TOT_P, label = paste(Name, "\n", round(TOT_P / 1e7, 1), "Cr"))) +
+  geom_treemap() +
+  geom_treemap_text(fontface = "bold", colour = "white", place = "centre", size = 9) +
+  scale_fill_viridis_c(option = "D", name = "Population") +
+  labs(
+    title = "Treemap of State Population (Census 2011)",
+    subtitle = "Area proportional to population"
+  )
+```
+
+---
+
+# Child Population (0-6 Years) Analysis
+
+## Percentage of Child Population (0-6) by State
+
+```{r child-pop-pct}
+child_data <- state_total %>%
+  select(Name, Pct_Child_06) %>%
+  mutate(Name = fct_reorder(Name, Pct_Child_06))
+
+ggplot(child_data, aes(x = Name, y = Pct_Child_06, fill = Pct_Child_06)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = mean(state_total$Pct_Child_06, na.rm = TRUE),
+             color = "red", linetype = "dashed", size = 0.8) +
+  coord_flip() +
+  scale_fill_gradient(low = "#FFC107", high = "#D32F2F") +
+  labs(
+    title = "Child Population (0-6 Years) as % of Total Population",
+    subtitle = "Red dashed line = National average across states",
+    x = NULL, y = "Percentage (%)"
+  )
+```
+
+## Child Sex Ratio (0-6 Years) by State
+
+```{r child-sex-ratio}
+csr_data <- state_total %>%
+  select(Name, Child_Sex_Ratio) %>%
+  mutate(
+    Name = fct_reorder(Name, Child_Sex_Ratio),
+    Below_Avg = Child_Sex_Ratio < 950
+  )
+
+ggplot(csr_data, aes(x = Name, y = Child_Sex_Ratio, fill = Below_Avg)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = 950, color = "darkred", linetype = "dashed", size = 0.8) +
+  geom_hline(yintercept = 1000, color = "darkgreen", linetype = "dotted", size = 0.8) +
+  coord_flip() +
+  scale_fill_manual(values = c("FALSE" = "#4CAF50", "TRUE" = "#F44336")) +
+  labs(
+    title = "Child Sex Ratio (0-6 Years) by State/UT (Census 2011)",
+    subtitle = "Red = below 950 | Green dashed = 1000 (equal) | Red dashed = 950 threshold",
+    x = NULL, y = "Females per 1000 Males"
+  )
+```
+
+---
+
+# Gender Analysis
+
+## Overall Sex Ratio by State
+
+```{r sex-ratio-state}
+sr_data <- state_total %>%
+  select(Name, Sex_Ratio) %>%
+  mutate(
+    Name = fct_reorder(Name, Sex_Ratio),
+    Category = case_when(
+      Sex_Ratio >= 1000 ~ "Favorable (>=1000)",
+      Sex_Ratio >= 950 ~ "Moderate (950-999)",
+      TRUE ~ "Low (<950)"
+    )
+  )
+
+ggplot(sr_data, aes(x = Name, y = Sex_Ratio, fill = Category)) +
+  geom_col() +
+  geom_hline(yintercept = 1000, color = "black", linetype = "dashed", size = 0.8) +
+  coord_flip() +
+  scale_fill_manual(values = c(
+    "Favorable (>=1000)" = "#4CAF50",
+    "Moderate (950-999)" = "#FF9800",
+    "Low (<950)" = "#F44336"
+  )) +
+  labs(
+    title = "Sex Ratio by State/UT (Census 2011)",
+    subtitle = "Females per 1000 Males | Dashed line = 1000 (parity)",
+    x = NULL, y = "Sex Ratio", fill = "Category"
+  )
+```
+
+## Sex Ratio vs Child Sex Ratio Comparison
+
+```{r sr-vs-csr-scatter}
+ggplot(state_total, aes(x = Sex_Ratio, y = Child_Sex_Ratio, label = Name)) +
+  geom_point(aes(size = TOT_P / 1e7, color = Literacy_Rate), alpha = 0.7) +
+  geom_text(size = 2.5, vjust = -0.8, check_overlap = TRUE) +
+  geom_hline(yintercept = 1000, linetype = "dashed", color = "grey50") +
+  geom_vline(xintercept = 1000, linetype = "dashed", color = "grey50") +
+  scale_color_viridis_c(name = "Literacy Rate (%)") +
+  scale_size_continuous(name = "Population\n(Crores)", range = c(2, 15)) +
+  labs(
+    title = "Sex Ratio vs Child Sex Ratio (0-6 yrs) by State",
+    subtitle = "Bubble size = Population, Color = Literacy Rate",
+    x = "Overall Sex Ratio (F per 1000 M)",
+    y = "Child Sex Ratio (F per 1000 M)"
+  )
+```
+
+## Top & Bottom 10 Districts by Sex Ratio
+
+```{r top-bottom-sr-dist}
+top10_sr <- district_total %>% arrange(desc(Sex_Ratio)) %>% head(10) %>% mutate(Type = "Top 10")
+bot10_sr <- district_total %>% arrange(Sex_Ratio) %>% head(10) %>% mutate(Type = "Bottom 10")
+
+sr_combined <- bind_rows(top10_sr, bot10_sr) %>%
+  mutate(Name = fct_reorder(Name, Sex_Ratio))
+
+ggplot(sr_combined, aes(x = Name, y = Sex_Ratio, fill = Type)) +
+  geom_col() +
+  geom_hline(yintercept = 1000, linetype = "dashed") +
+  coord_flip() +
+  scale_fill_manual(values = c("Top 10" = "#4CAF50", "Bottom 10" = "#F44336")) +
+  labs(
+    title = "Top 10 & Bottom 10 Districts by Sex Ratio",
+    x = NULL, y = "Sex Ratio (F per 1000 M)", fill = NULL
+  )
+```
+
+---
+
+# Urbanization Analysis
+
+## Urbanization Rate by State
+
+```{r urbanization-rate}
+urban_data <- state_total %>%
+  filter(!is.na(Urban_Pct)) %>%
+  mutate(Name = fct_reorder(Name, Urban_Pct))
+
+ggplot(urban_data, aes(x = Name, y = Urban_Pct, fill = Urban_Pct)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = mean(urban_data$Urban_Pct, na.rm = TRUE),
+             color = "red", linetype = "dashed") +
+  coord_flip() +
+  scale_fill_gradient(low = "#81C784", high = "#1B5E20") +
+  labs(
+    title = "Urbanization Rate by State/UT (Census 2011)",
+    subtitle = "Red dashed line = Average urbanization rate",
+    x = NULL, y = "Urban Population (%)"
+  )
+```
+
+## Urbanization vs Literacy Rate
+
+```{r urban-vs-literacy}
+ggplot(state_total %>% filter(!is.na(Urban_Pct)),
+       aes(x = Urban_Pct, y = Literacy_Rate, label = Name)) +
+  geom_point(aes(size = TOT_P / 1e7, color = Sex_Ratio), alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE, color = "red", linetype = "dashed") +
+  geom_text(size = 2.5, vjust = -1, check_overlap = TRUE) +
+  scale_color_viridis_c(name = "Sex Ratio") +
+  scale_size_continuous(name = "Population\n(Crores)", range = c(2, 12)) +
+  labs(
+    title = "Urbanization vs Literacy Rate by State",
+    subtitle = "Bubble size = population, color = sex ratio. Red = linear trend",
+    x = "Urbanization (%)", y = "Literacy Rate (%)"
+  )
+```
+
+---
+
+# Literacy Analysis
+
+## Overall Literacy Rate by State
+
+```{r literacy-rate-state}
+lit_data <- state_total %>%
+  select(Name, Literacy_Rate) %>%
+  mutate(Name = fct_reorder(Name, Literacy_Rate))
+
+ggplot(lit_data, aes(x = Name, y = Literacy_Rate, fill = Literacy_Rate)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = mean(state_total$Literacy_Rate, na.rm = TRUE),
+             color = "red", linetype = "dashed") +
+  coord_flip() +
+  scale_fill_gradient(low = "#FFCCBC", high = "#BF360C") +
+  labs(
+    title = "Literacy Rate by State/UT (Census 2011)",
+    subtitle = "Red dashed line = Mean literacy rate across states",
+    x = NULL, y = "Literacy Rate (%)"
+  )
+```
+
+## Male vs Female Literacy Rate by State
+
+```{r male-female-literacy}
+lit_gender <- state_total %>%
+  select(Name, Male_Literacy_Rate, Female_Literacy_Rate) %>%
+  pivot_longer(cols = c(Male_Literacy_Rate, Female_Literacy_Rate),
+               names_to = "Gender", values_to = "Rate") %>%
+  mutate(
+    Gender = ifelse(Gender == "Male_Literacy_Rate", "Male", "Female"),
+    Name = fct_reorder(Name, Rate, .fun = mean)
+  )
+
+ggplot(lit_gender, aes(x = Name, y = Rate, fill = Gender)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  scale_fill_manual(values = c("Male" = "#1976D2", "Female" = "#C2185B")) +
+  labs(
+    title = "Male vs Female Literacy Rate by State/UT",
+    x = NULL, y = "Literacy Rate (%)", fill = "Gender"
+  )
+```
+
+## Literacy Gender Gap by State
+
+```{r literacy-gender-gap}
+gap_data <- state_total %>%
+  select(Name, Literacy_Gender_Gap) %>%
+  mutate(Name = fct_reorder(Name, Literacy_Gender_Gap))
+
+ggplot(gap_data, aes(x = Name, y = Literacy_Gender_Gap, fill = Literacy_Gender_Gap)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_gradient2(low = "#4CAF50", mid = "#FFC107", high = "#D32F2F", midpoint = 15) +
+  labs(
+    title = "Literacy Gender Gap (Male - Female) by State/UT",
+    subtitle = "Higher values indicate greater disparity",
+    x = NULL, y = "Gender Gap (percentage points)"
+  )
+```
+
+## District-Level Literacy Distribution
+
+```{r literacy-dist-histogram}
+ggplot(district_total, aes(x = Literacy_Rate)) +
+  geom_histogram(bins = 40, fill = "#7B1FA2", color = "white", alpha = 0.85) +
+  geom_vline(xintercept = median(district_total$Literacy_Rate, na.rm = TRUE),
+             color = "red", linetype = "dashed", size = 1) +
+  labs(
+    title = "Distribution of Literacy Rates Across Districts",
+    subtitle = "Red dashed line = Median district literacy rate",
+    x = "Literacy Rate (%)", y = "Number of Districts"
+  )
+```
+
+## Top 20 & Bottom 20 Districts by Literacy Rate
+
+```{r top-bottom-lit-dist}
+top20_lit <- district_total %>% arrange(desc(Literacy_Rate)) %>% head(20) %>% mutate(Rank = "Top 20")
+bot20_lit <- district_total %>% arrange(Literacy_Rate) %>% head(20) %>% mutate(Rank = "Bottom 20")
+
+lit_combined <- bind_rows(top20_lit, bot20_lit) %>%
+  mutate(Name = fct_reorder(Name, Literacy_Rate))
+
+ggplot(lit_combined, aes(x = Name, y = Literacy_Rate, fill = Rank)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("Top 20" = "#2E7D32", "Bottom 20" = "#C62828")) +
+  labs(
+    title = "Top 20 & Bottom 20 Districts by Literacy Rate",
+    x = NULL, y = "Literacy Rate (%)", fill = NULL
+  ) +
+  theme(axis.text.y = element_text(size = 8))
+```
+
+---
+
+# Scheduled Caste (SC) & Scheduled Tribe (ST) Analysis
+
+## SC Population Percentage by State
+
+```{r sc-pct-state}
+sc_data <- state_total %>%
+  select(Name, Pct_SC) %>%
+  mutate(Name = fct_reorder(Name, Pct_SC))
+
+ggplot(sc_data, aes(x = Name, y = Pct_SC, fill = Pct_SC)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = mean(state_total$Pct_SC, na.rm = TRUE),
+             color = "red", linetype = "dashed") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B3E5FC", high = "#01579B") +
+  labs(
+    title = "Scheduled Caste (SC) Population as % of Total by State",
+    subtitle = "Red dashed line = National average SC percentage",
+    x = NULL, y = "SC Population (%)"
+  )
+```
+
+## ST Population Percentage by State
+
+```{r st-pct-state}
+st_data <- state_total %>%
+  select(Name, Pct_ST) %>%
+  mutate(Name = fct_reorder(Name, Pct_ST))
+
+ggplot(st_data, aes(x = Name, y = Pct_ST, fill = Pct_ST)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = mean(state_total$Pct_ST, na.rm = TRUE),
+             color = "red", linetype = "dashed") +
+  coord_flip() +
+  scale_fill_gradient(low = "#C8E6C9", high = "#1B5E20") +
+  labs(
+    title = "Scheduled Tribe (ST) Population as % of Total by State",
+    subtitle = "Red dashed line = National average ST percentage",
+    x = NULL, y = "ST Population (%)"
+  )
+```
+
+## SC vs ST Population Share: Stacked Bar
+
+```{r sc-st-stacked}
+sc_st_data <- state_total %>%
+  select(Name, Pct_SC, Pct_ST) %>%
+  mutate(Total_SC_ST = Pct_SC + Pct_ST) %>%
+  pivot_longer(cols = c(Pct_SC, Pct_ST), names_to = "Category", values_to = "Percentage") %>%
+  mutate(
+    Category = ifelse(Category == "Pct_SC", "Scheduled Caste", "Scheduled Tribe"),
+    Name = fct_reorder(Name, Percentage, .fun = sum)
+  )
+
+ggplot(sc_st_data, aes(x = Name, y = Percentage, fill = Category)) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  scale_fill_manual(values = c("Scheduled Caste" = "#3F51B5", "Scheduled Tribe" = "#FF5722")) +
+  labs(
+    title = "SC & ST Population Share by State/UT",
+    x = NULL, y = "Percentage of Total Population (%)", fill = NULL
+  )
+```
+
+---
+
+# Workforce & Employment Analysis
+
+## Work Participation Rate by State
+
+```{r wpr-state}
+wpr_data <- state_total %>%
+  select(Name, Work_Participation_Rate) %>%
+  mutate(Name = fct_reorder(Name, Work_Participation_Rate))
+
+ggplot(wpr_data, aes(x = Name, y = Work_Participation_Rate, fill = Work_Participation_Rate)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = mean(state_total$Work_Participation_Rate, na.rm = TRUE),
+             color = "red", linetype = "dashed") +
+  coord_flip() +
+  scale_fill_gradient(low = "#FFECB3", high = "#E65100") +
+  labs(
+    title = "Work Participation Rate by State/UT (Census 2011)",
+    subtitle = "Percentage of total population that are workers",
+    x = NULL, y = "Work Participation Rate (%)"
+  )
+```
+
+## Male vs Female Work Participation Rate
+
+```{r male-female-wpr}
+wpr_gender <- state_total %>%
+  select(Name, Male_WPR, Female_WPR) %>%
+  pivot_longer(cols = c(Male_WPR, Female_WPR), names_to = "Gender", values_to = "WPR") %>%
+  mutate(
+    Gender = ifelse(Gender == "Male_WPR", "Male", "Female"),
+    Name = fct_reorder(Name, WPR, .fun = mean)
+  )
+
+ggplot(wpr_gender, aes(x = Name, y = WPR, fill = Gender)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  scale_fill_manual(values = c("Male" = "#0D47A1", "Female" = "#AD1457")) +
+  labs(
+    title = "Male vs Female Work Participation Rate by State",
+    x = NULL, y = "Work Participation Rate (%)", fill = "Gender"
+  )
+```
+
+## Gender Gap in Work Participation
+
+```{r wpr-gender-gap}
+state_total %>%
+  mutate(
+    WPR_Gap = Male_WPR - Female_WPR,
+    Name = fct_reorder(Name, WPR_Gap)
+  ) %>%
+  ggplot(aes(x = Name, y = WPR_Gap, fill = WPR_Gap)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_gradient2(low = "#4CAF50", mid = "#FFC107", high = "#D32F2F", midpoint = 30) +
+  labs(
+    title = "Gender Gap in Work Participation Rate (Male - Female)",
+    subtitle = "Larger gap indicates more gender disparity in workforce",
+    x = NULL, y = "Gap (percentage points)"
+  )
+```
+
+## Workforce Composition: Main vs Marginal Workers
+
+```{r main-vs-marginal}
+worker_comp <- state_total %>%
+  select(Name, Pct_Main_Workers, Pct_Marginal_Workers) %>%
+  pivot_longer(cols = c(Pct_Main_Workers, Pct_Marginal_Workers),
+               names_to = "Worker_Type", values_to = "Percentage") %>%
+  mutate(
+    Worker_Type = ifelse(Worker_Type == "Pct_Main_Workers", "Main Workers", "Marginal Workers"),
+    Name = fct_reorder(Name, Percentage, .fun = sum)
+  )
+
+ggplot(worker_comp, aes(x = Name, y = Percentage, fill = Worker_Type)) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  scale_fill_manual(values = c("Main Workers" = "#1565C0", "Marginal Workers" = "#EF6C00")) +
+  labs(
+    title = "Workforce Composition: Main vs Marginal Workers by State",
+    subtitle = "As percentage of total workers",
+    x = NULL, y = "Percentage of Workers (%)", fill = NULL
+  )
+```
+
+## Employment Sectors Distribution
+
+```{r employment-sectors}
+sector_data <- state_total %>%
+  select(Name, Pct_Cultivators, Pct_Agri_Lab, Pct_HH_Industry, Pct_Other_Workers) %>%
+  pivot_longer(cols = -Name, names_to = "Sector", values_to = "Percentage") %>%
+  mutate(
+    Sector = case_when(
+      Sector == "Pct_Cultivators" ~ "Cultivators",
+      Sector == "Pct_Agri_Lab" ~ "Agricultural\nLabourers",
+      Sector == "Pct_HH_Industry" ~ "Household\nIndustry",
+      Sector == "Pct_Other_Workers" ~ "Other Workers"
+    ),
+    Name = fct_reorder(Name, Percentage, .fun = sum)
+  )
+
+ggplot(sector_data, aes(x = Name, y = Percentage, fill = Sector)) +
+  geom_col(position = "stack") +
+  coord_flip() +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Employment Sector Distribution by State/UT",
+    subtitle = "Cultivators, Agricultural Labourers, Household Industry, Other Workers",
+    x = NULL, y = "Percentage of Total Workers (%)", fill = "Sector"
+  )
+```
+
+## Agricultural Dependency: Cultivators + Agri Labourers
+
+```{r agri-dependency}
+state_total %>%
+  mutate(
+    Agri_Dependency = Pct_Cultivators + Pct_Agri_Lab,
+    Name = fct_reorder(Name, Agri_Dependency)
+  ) %>%
+  ggplot(aes(x = Name, y = Agri_Dependency, fill = Agri_Dependency)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = 50, color = "red", linetype = "dashed") +
+  coord_flip() +
+  scale_fill_gradient(low = "#A5D6A7", high = "#1B5E20") +
+  labs(
+    title = "Agricultural Dependency by State (Cultivators + Agri Labourers)",
+    subtitle = "As % of total workers. Red dashed line = 50%",
+    x = NULL, y = "Agricultural Workers (%)"
+  )
+```
+
+## Non-Workers as Percentage of Population
+
+```{r non-workers-pct}
+state_total %>%
+  mutate(Name = fct_reorder(Name, Pct_Non_Workers)) %>%
+  ggplot(aes(x = Name, y = Pct_Non_Workers, fill = Pct_Non_Workers)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_gradient(low = "#E1BEE7", high = "#4A148C") +
+  labs(
+    title = "Non-Workers as % of Total Population by State",
+    x = NULL, y = "Non-Workers (%)"
+  )
+```
+
+---
+
+# Household Analysis
+
+## Average Household Size by State
+
+```{r avg-hh-size}
+state_total %>%
+  mutate(Name = fct_reorder(Name, Avg_HH_Size)) %>%
+  ggplot(aes(x = Name, y = Avg_HH_Size, fill = Avg_HH_Size)) +
+  geom_col(show.legend = FALSE) +
+  geom_hline(yintercept = mean(state_total$Avg_HH_Size, na.rm = TRUE),
+             color = "red", linetype = "dashed") +
+  coord_flip() +
+  scale_fill_gradient(low = "#B2DFDB", high = "#004D40") +
+  labs(
+    title = "Average Household Size by State/UT (Census 2011)",
+    subtitle = "Red dashed = national average",
+    x = NULL, y = "Average Household Size"
+  )
+```
+
+## Number of Households by State
+
+```{r num-households}
+state_total %>%
+  mutate(Name = fct_reorder(Name, No_HH)) %>%
+  ggplot(aes(x = Name, y = No_HH / 1e6, fill = No_HH)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  scale_fill_viridis_c(option = "E") +
+  labs(
+    title = "Number of Households by State (Census 2011)",
+    x = NULL, y = "Households (in Millions)"
+  )
+```
+
+---
+
+# Correlation Analysis
+
+## Correlation Heatmap of Key Indicators
+
+```{r correlation-heatmap, fig.width=14, fig.height=12}
+corr_vars <- state_total %>%
+  select(
+    TOT_P, Sex_Ratio, Child_Sex_Ratio, Literacy_Rate,
+    Male_Literacy_Rate, Female_Literacy_Rate, Literacy_Gender_Gap,
+    Pct_SC, Pct_ST, Pct_Child_06, Work_Participation_Rate,
+    Male_WPR, Female_WPR, Urban_Pct, Avg_HH_Size,
+    Pct_Cultivators, Pct_Agri_Lab, Pct_Other_Workers, Pct_Non_Workers
+  ) %>%
+  na.omit()
+
+corr_matrix <- cor(corr_vars)
+
+corrplot(corr_matrix,
+         method = "color",
+         type = "lower",
+         order = "hclust",
+         tl.col = "black",
+         tl.srt = 45,
+         tl.cex = 0.8,
+         cl.cex = 0.8,
+         addCoef.col = "black",
+         number.cex = 0.6,
+         col = colorRampPalette(c("#D32F2F", "white", "#1976D2"))(200),
+         title = "Correlation Heatmap of Key Census Indicators",
+         mar = c(0, 0, 2, 0))
+```
+
+## Key Correlations: Literacy vs Other Indicators
+
+```{r lit-vs-indicators, fig.width=14, fig.height=10}
+p1 <- ggplot(state_total, aes(x = Literacy_Rate, y = Sex_Ratio)) +
+  geom_point(color = "#1976D2", size = 3) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Literacy Rate vs Sex Ratio", x = "Literacy Rate (%)", y = "Sex Ratio")
+
+p2 <- ggplot(state_total, aes(x = Female_Literacy_Rate, y = Female_WPR)) +
+  geom_point(color = "#C2185B", size = 3) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Female Literacy vs Female WPR", x = "Female Literacy Rate (%)", y = "Female WPR (%)")
+
+p3 <- ggplot(state_total %>% filter(!is.na(Urban_Pct)),
+             aes(x = Urban_Pct, y = Pct_Non_Workers)) +
+  geom_point(color = "#7B1FA2", size = 3) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Urbanization vs Non-Workers %", x = "Urban %", y = "Non-Workers %")
+
+p4 <- ggplot(state_total, aes(x = Literacy_Rate, y = Pct_Child_06)) +
+  geom_point(color = "#388E3C", size = 3) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  labs(title = "Literacy Rate vs Child (0-6) %", x = "Literacy Rate (%)", y = "Child (0-6) %")
+
+grid.arrange(p1, p2, p3, p4, ncol = 2,
+             top = "Key Correlations Between Census Indicators")
+```
+
+---
+
+# Box Plot Analysis (District Level)
+
+## Box Plots of Key District-Level Indicators
+
+```{r boxplots, fig.width=14, fig.height=10}
+bp1 <- ggplot(district_total, aes(y = Literacy_Rate)) +
+  geom_boxplot(fill = "#7986CB", alpha = 0.7) +
+  labs(title = "Literacy Rate", y = "%") + theme(axis.text.x = element_blank())
+
+bp2 <- ggplot(district_total, aes(y = Sex_Ratio)) +
+  geom_boxplot(fill = "#F48FB1", alpha = 0.7) +
+  labs(title = "Sex Ratio", y = "F/1000M") + theme(axis.text.x = element_blank())
+
+bp3 <- ggplot(district_total, aes(y = Work_Participation_Rate)) +
+  geom_boxplot(fill = "#FFB74D", alpha = 0.7) +
+  labs(title = "Work Participation Rate", y = "%") + theme(axis.text.x = element_blank())
+
+bp4 <- ggplot(district_total, aes(y = Pct_Child_06)) +
+  geom_boxplot(fill = "#81C784", alpha = 0.7) +
+  labs(title = "Child (0-6) %", y = "%") + theme(axis.text.x = element_blank())
+
+bp5 <- ggplot(district_total, aes(y = Pct_SC)) +
+  geom_boxplot(fill = "#90CAF9", alpha = 0.7) +
+  labs(title = "SC %", y = "%") + theme(axis.text.x = element_blank())
+
+bp6 <- ggplot(district_total, aes(y = Pct_ST)) +
+  geom_boxplot(fill = "#CE93D8", alpha = 0.7) +
+  labs(title = "ST %", y = "%") + theme(axis.text.x = element_blank())
+
+grid.arrange(bp1, bp2, bp3, bp4, bp5, bp6, ncol = 3,
+             top = "Distribution of Key Indicators Across Districts")
+```
+
+---
+
+# Top and Bottom Tables
+
+## States Ranked by Key Indicators
+
+```{r ranking-table}
+ranking <- state_total %>%
+  select(Name, TOT_P, Sex_Ratio, Child_Sex_Ratio, Literacy_Rate,
+         Female_Literacy_Rate, Work_Participation_Rate, Pct_SC, Pct_ST, Urban_Pct) %>%
+  arrange(desc(TOT_P))
+
+ranking %>%
+  mutate(
+    TOT_P = format(TOT_P, big.mark = ","),
+    Rank = row_number()
+  ) %>%
+  select(Rank, everything()) %>%
+  kable(caption = "All States/UTs Ranked by Population with Key Indicators",
+        col.names = c("Rank", "State/UT", "Population", "Sex Ratio", "Child SR",
+                      "Literacy %", "Female Lit %", "WPR %", "SC %", "ST %", "Urban %")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), font_size = 11) %>%
+  scroll_box(height = "500px")
+```
+
+## Top 10 Districts by Each Key Indicator
+
+```{r top10-districts-table}
+# Top 10 by Literacy Rate
+cat("=== Top 10 Districts by Literacy Rate ===\n")
+district_total %>%
+  arrange(desc(Literacy_Rate)) %>%
+  head(10) %>%
+  select(Name, Literacy_Rate, Sex_Ratio, TOT_P) %>%
+  mutate(TOT_P = format(TOT_P, big.mark = ",")) %>%
+  kable(col.names = c("District", "Literacy Rate (%)", "Sex Ratio", "Population")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE) %>%
+  print()
+```
+
+```{r top10-sex-ratio}
+cat("=== Top 10 Districts by Sex Ratio ===\n")
+district_total %>%
+  arrange(desc(Sex_Ratio)) %>%
+  head(10) %>%
+  select(Name, Sex_Ratio, Child_Sex_Ratio, Literacy_Rate, TOT_P) %>%
+  mutate(TOT_P = format(TOT_P, big.mark = ",")) %>%
+  kable(col.names = c("District", "Sex Ratio", "Child SR", "Literacy %", "Population")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+```{r bottom10-child-sr}
+cat("=== Bottom 10 Districts by Child Sex Ratio ===\n")
+district_total %>%
+  arrange(Child_Sex_Ratio) %>%
+  head(10) %>%
+  select(Name, Child_Sex_Ratio, Sex_Ratio, Literacy_Rate) %>%
+  kable(col.names = c("District", "Child Sex Ratio", "Sex Ratio", "Literacy %")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), full_width = FALSE)
+```
+
+---
+
+# Rural vs Urban Comparative Analysis
+
+## Rural vs Urban Population Split by State
+
+```{r rural-urban-pop}
+if (nrow(state_rural) > 0 & nrow(state_urban) > 0) {
+  ru_data <- state_rural %>%
+    select(Name, Rural_Pop = TOT_P) %>%
+    inner_join(state_urban %>% select(Name, Urban_Pop = TOT_P), by = "Name") %>%
+    pivot_longer(cols = c(Rural_Pop, Urban_Pop), names_to = "Area", values_to = "Population") %>%
+    mutate(
+      Area = ifelse(Area == "Rural_Pop", "Rural", "Urban"),
+      Name = fct_reorder(Name, Population, .fun = sum)
+    )
+
+  ggplot(ru_data, aes(x = Name, y = Population / 1e7, fill = Area)) +
+    geom_col(position = "fill") +
+    coord_flip() +
+    scale_fill_manual(values = c("Rural" = "#66BB6A", "Urban" = "#42A5F5")) +
+    scale_y_continuous(labels = percent) +
+    labs(
+      title = "Rural vs Urban Population Proportion by State",
+      x = NULL, y = "Proportion", fill = "Area"
+    )
+}
+```
+
+## Rural vs Urban Literacy Rates
+
+```{r rural-urban-literacy}
+if (nrow(state_rural) > 0 & nrow(state_urban) > 0) {
+  rural_lit <- state_rural %>%
+    mutate(Literacy_Rate = round((P_LIT / (TOT_P - P_06)) * 100, 2)) %>%
+    select(Name, Rural_Lit = Literacy_Rate)
+
+  urban_lit <- state_urban %>%
+    mutate(Literacy_Rate = round((P_LIT / (TOT_P - P_06)) * 100, 2)) %>%
+    select(Name, Urban_Lit = Literacy_Rate)
+
+  ru_lit <- rural_lit %>%
+    inner_join(urban_lit, by = "Name") %>%
+    pivot_longer(cols = c(Rural_Lit, Urban_Lit), names_to = "Area", values_to = "Literacy") %>%
+    mutate(
+      Area = ifelse(Area == "Rural_Lit", "Rural", "Urban"),
+      Name = fct_reorder(Name, Literacy, .fun = mean)
+    )
+
+  ggplot(ru_lit, aes(x = Name, y = Literacy, fill = Area)) +
+    geom_col(position = "dodge") +
+    coord_flip() +
+    scale_fill_manual(values = c("Rural" = "#A5D6A7", "Urban" = "#64B5F6")) +
+    labs(
+      title = "Rural vs Urban Literacy Rates by State/UT",
+      x = NULL, y = "Literacy Rate (%)", fill = "Area"
+    )
+}
+```
+
+## Rural vs Urban Sex Ratio
+
+```{r rural-urban-sr}
+if (nrow(state_rural) > 0 & nrow(state_urban) > 0) {
+  rural_sr <- state_rural %>%
+    mutate(Sex_Ratio = round((TOT_F / TOT_M) * 1000, 1)) %>%
+    select(Name, Rural_SR = Sex_Ratio)
+
+  urban_sr <- state_urban %>%
+    mutate(Sex_Ratio = round((TOT_F / TOT_M) * 1000, 1)) %>%
+    select(Name, Urban_SR = Sex_Ratio)
+
+  ru_sr <- rural_sr %>%
+    inner_join(urban_sr, by = "Name") %>%
+    pivot_longer(cols = c(Rural_SR, Urban_SR), names_to = "Area", values_to = "Sex_Ratio") %>%
+    mutate(
+      Area = ifelse(Area == "Rural_SR", "Rural", "Urban"),
+      Name = fct_reorder(Name, Sex_Ratio, .fun = mean)
+    )
+
+  ggplot(ru_sr, aes(x = Name, y = Sex_Ratio, fill = Area)) +
+    geom_col(position = "dodge") +
+    geom_hline(yintercept = 1000, linetype = "dashed") +
+    coord_flip() +
+    scale_fill_manual(values = c("Rural" = "#81C784", "Urban" = "#4FC3F7")) +
+    labs(
+      title = "Rural vs Urban Sex Ratio by State/UT",
+      subtitle = "Dashed line = Parity (1000)",
+      x = NULL, y = "Sex Ratio (F per 1000 M)", fill = "Area"
+    )
+}
+```
+
+---
+
+# Advanced Visualizations
+
+## Density Plots: Key Indicators at District Level
+
+```{r density-plots, fig.width=14, fig.height=10}
+dp1 <- ggplot(district_total, aes(x = Literacy_Rate)) +
+  geom_density(fill = "#5C6BC0", alpha = 0.6) +
+  labs(title = "Literacy Rate", x = "%", y = "Density")
+
+dp2 <- ggplot(district_total, aes(x = Sex_Ratio)) +
+  geom_density(fill = "#EC407A", alpha = 0.6) +
+  labs(title = "Sex Ratio", x = "F/1000M", y = "Density")
+
+dp3 <- ggplot(district_total, aes(x = Work_Participation_Rate)) +
+  geom_density(fill = "#FFA726", alpha = 0.6) +
+  labs(title = "Work Participation Rate", x = "%", y = "Density")
+
+dp4 <- ggplot(district_total, aes(x = Avg_HH_Size)) +
+  geom_density(fill = "#66BB6A", alpha = 0.6) +
+  labs(title = "Avg Household Size", x = "Persons", y = "Density")
+
+grid.arrange(dp1, dp2, dp3, dp4, ncol = 2,
+             top = "Density Distributions of Key Indicators (District Level)")
+```
+
+## Lollipop Chart: Female Literacy by State
+
+```{r lollipop-female-lit}
+state_total %>%
+  mutate(Name = fct_reorder(Name, Female_Literacy_Rate)) %>%
+  ggplot(aes(x = Name, y = Female_Literacy_Rate)) +
+  geom_segment(aes(x = Name, xend = Name, y = 0, yend = Female_Literacy_Rate),
+               color = "#E91E63", size = 0.8) +
+  geom_point(color = "#C2185B", size = 3) +
+  geom_hline(yintercept = mean(state_total$Female_Literacy_Rate, na.rm = TRUE),
+             color = "blue", linetype = "dashed") +
+  coord_flip() +
+  labs(
+    title = "Female Literacy Rate by State/UT (Lollipop Chart)",
+    subtitle = "Blue dashed line = Mean female literacy rate",
+    x = NULL, y = "Female Literacy Rate (%)"
+  )
+```
+
+## Dumbbell Chart: Male vs Female Literacy
+
+```{r dumbbell-literacy, fig.height=10}
+state_total %>%
+  mutate(Name = fct_reorder(Name, Female_Literacy_Rate)) %>%
+  ggplot() +
+  geom_segment(aes(x = Female_Literacy_Rate, xend = Male_Literacy_Rate,
+                   y = Name, yend = Name),
+               color = "grey60", size = 1) +
+  geom_point(aes(x = Male_Literacy_Rate, y = Name), color = "#1976D2", size = 3) +
+  geom_point(aes(x = Female_Literacy_Rate, y = Name), color = "#C2185B", size = 3) +
+  annotate("text", x = 95, y = 1, label = "Blue = Male | Pink = Female",
+           size = 3.5, fontface = "italic") +
+  labs(
+    title = "Male vs Female Literacy Rate by State (Dumbbell Chart)",
+    subtitle = "Gap between dots = Gender disparity",
+    x = "Literacy Rate (%)", y = NULL
+  )
+```
+
+## Population Pyramid Style: Workers vs Non-Workers by Gender
+
+```{r worker-nonworker-pyramid}
+pyramid_data <- state_total %>%
+  arrange(desc(TOT_P)) %>%
+  head(15) %>%
+  select(Name, TOT_WORK_M, TOT_WORK_F, NON_WORK_M, NON_WORK_F) %>%
+  mutate(
+    Male_Workers = -TOT_WORK_M / 1e6,
+    Female_Workers = TOT_WORK_F / 1e6,
+    Name = factor(Name, levels = rev(Name))
+  )
+
+pyr_long <- pyramid_data %>%
+  select(Name, Male_Workers, Female_Workers) %>%
+  pivot_longer(cols = c(Male_Workers, Female_Workers),
+               names_to = "Gender", values_to = "Workers") %>%
+  mutate(Gender = ifelse(Gender == "Male_Workers", "Male", "Female"))
+
+ggplot(pyr_long, aes(x = Name, y = Workers, fill = Gender)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_manual(values = c("Male" = "#1565C0", "Female" = "#AD1457")) +
+  scale_y_continuous(labels = function(x) paste0(abs(x), "M")) +
+  labs(
+    title = "Workers by Gender: Top 15 States (Pyramid Style)",
+    subtitle = "Left = Male workers | Right = Female workers",
+    x = NULL, y = "Workers (Millions)", fill = "Gender"
+  )
+```
+
+---
+
+# State-wise Heatmap of Indicators
+
+```{r heatmap-indicators, fig.width=16, fig.height=10}
+heat_data <- state_total %>%
+  select(Name, Sex_Ratio, Child_Sex_Ratio, Literacy_Rate,
+         Female_Literacy_Rate, Literacy_Gender_Gap,
+         Work_Participation_Rate, Female_WPR, Pct_SC, Pct_ST,
+         Pct_Child_06, Pct_Non_Workers) %>%
+  column_to_rownames("Name")
+
+# Normalize to 0-1 for heatmap
+heat_scaled <- as.data.frame(scale(heat_data))
+heat_scaled$State <- rownames(heat_scaled)
+
+heat_long <- heat_scaled %>%
+  pivot_longer(cols = -State, names_to = "Indicator", values_to = "Z_Score")
+
+ggplot(heat_long, aes(x = Indicator, y = State, fill = Z_Score)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient2(low = "#D32F2F", mid = "white", high = "#1976D2",
+                       midpoint = 0, name = "Z-Score") +
+  labs(
+    title = "Heatmap: State-wise Z-Scores of Key Census Indicators",
+    subtitle = "Red = below average | Blue = above average",
+    x = "Indicator", y = "State/UT"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+    axis.text.y = element_text(size = 7)
+  )
+```
+
+---
+
+# Summary & Key Findings
+
+```{r final-summary}
+cat("========================================================\n")
+cat("        INDIA CENSUS 2011 - KEY FINDINGS SUMMARY        \n")
+cat("========================================================\n\n")
+
+cat("POPULATION:\n")
+cat("  Total states/UTs analyzed:", nrow(state_total), "\n")
+cat("  Total districts analyzed:", nrow(district_total), "\n")
+cat("  Most populous state:", state_total$Name[which.max(state_total$TOT_P)], "\n")
+cat("  Least populous state/UT:", state_total$Name[which.min(state_total$TOT_P)], "\n\n")
+
+cat("SEX RATIO:\n")
+cat("  Highest Sex Ratio:", state_total$Name[which.max(state_total$Sex_Ratio)],
+    "(", max(state_total$Sex_Ratio, na.rm = TRUE), ")\n")
+cat("  Lowest Sex Ratio:", state_total$Name[which.min(state_total$Sex_Ratio)],
+    "(", min(state_total$Sex_Ratio, na.rm = TRUE), ")\n")
+cat("  Highest Child SR:", state_total$Name[which.max(state_total$Child_Sex_Ratio)],
+    "(", max(state_total$Child_Sex_Ratio, na.rm = TRUE), ")\n")
+cat("  Lowest Child SR:", state_total$Name[which.min(state_total$Child_Sex_Ratio)],
+    "(", min(state_total$Child_Sex_Ratio, na.rm = TRUE), ")\n\n")
+
+cat("LITERACY:\n")
+cat("  Highest Literacy:", state_total$Name[which.max(state_total$Literacy_Rate)],
+    "(", max(state_total$Literacy_Rate, na.rm = TRUE), "% )\n")
+cat("  Lowest Literacy:", state_total$Name[which.min(state_total$Literacy_Rate)],
+    "(", min(state_total$Literacy_Rate, na.rm = TRUE), "% )\n")
+cat("  Largest Gender Gap:", state_total$Name[which.max(state_total$Literacy_Gender_Gap)],
+    "(", max(state_total$Literacy_Gender_Gap, na.rm = TRUE), " pp)\n\n")
+
+cat("WORKFORCE:\n")
+cat("  Highest WPR:", state_total$Name[which.max(state_total$Work_Participation_Rate)],
+    "(", max(state_total$Work_Participation_Rate, na.rm = TRUE), "% )\n")
+cat("  Lowest WPR:", state_total$Name[which.min(state_total$Work_Participation_Rate)],
+    "(", min(state_total$Work_Participation_Rate, na.rm = TRUE), "% )\n")
+cat("  Highest Female WPR:", state_total$Name[which.max(state_total$Female_WPR)],
+    "(", max(state_total$Female_WPR, na.rm = TRUE), "% )\n\n")
+
+cat("URBANIZATION:\n")
+cat("  Most urbanized:", state_total$Name[which.max(state_total$Urban_Pct)],
+    "(", max(state_total$Urban_Pct, na.rm = TRUE), "% )\n")
+cat("  Least urbanized:", state_total$Name[which.min(state_total$Urban_Pct)],
+    "(", min(state_total$Urban_Pct, na.rm = TRUE), "% )\n\n")
+
+cat("========================================================\n")
+```
+
+---
+
+# Session Info
+
+```{r session-info}
+sessionInfo()
+```
+
+---
+
+*End of Analysis — India Census 2011 State & District Level EDA*
