@@ -1,7 +1,6 @@
 ---
 title: "India Census 2011: Final Presentation Report"
 author: "Vivek R"
-date: "`r format(Sys.Date(), '%d %B %Y')`"
 output:
   html_document:
     toc: true
