@@ -4,9 +4,11 @@ author: "Vivek R"
 output:
   html_document:
     toc: true
-    toc_float: true
-    toc_depth: 2
-    number_sections: false
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 4
+    number_sections: true
     theme: flatly
     css: final-report.css
     fig_width: 11

@@ -5,7 +5,7 @@ cat("Pandoc available:", rmarkdown::pandoc_available(), "\n")
 result <- tryCatch({
   out <- rmarkdown::render(
     input = "Final_India_Census_2011_Report.Rmd",
-    output_file = "Final_India_Census_2011_Report.html",
+    output_file = "India_Census_2011_Report.html",
     quiet = FALSE
   )
   cat("Render output path:", out, "\n")
