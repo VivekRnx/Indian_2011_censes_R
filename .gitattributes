@@ -1,3 +1,0 @@
-# Ensure R Markdown files contribute to GitHub language stats as R
-*.Rmd linguist-language=R linguist-detectable=true
-*.rmd linguist-language=R linguist-detectable=true
