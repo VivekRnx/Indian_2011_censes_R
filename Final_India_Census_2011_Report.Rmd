@@ -1,6 +1,6 @@
 ---
 title: "India Census 2011: Final Presentation Report"
-author: "Vivek R"
+author: "Vivek Reddy"
 output:
   html_document:
     toc: true
